@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cờ Vây HTML</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif&display=swap" rel="stylesheet">
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: 'Noto Serif', serif;
+      background-color: #f0e4b0;
+      margin: 0;
+      padding: 20px;
+    }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(19, 30px);
+      grid-template-rows: repeat(19, 30px);
+      border: 2px solid #333;
+      background-color: #deb887;
+      position: relative;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      border-radius: 10px;
+    }
+    .cell {
+      width: 30px;
+      height: 30px;
+      border: 1px solid #00000050;
+      box-sizing: border-box;
+    }
+    .stone.black {
+      background: black;
+      border-radius: 50%;
+      width: 100%;
+      height: 100%;
+    }
+    .stone.white {
+      background: white;
+      border-radius: 50%;
+      width: 100%;
+      height: 100%;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    #turn, #score, #winner {
+      font-size: 18px;
+      margin-top: 10px;
+    }
+    .buttons {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      padding: 6px 16px;
+      font-size: 16px;
+      background-color: #333;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #555;
+    }
+  </style>
+</head>
+<body>
+  <h1>Game Cờ Vây (Go)</h1>
+  <div class="board" id="board"></div>
+  <p id="turn">Lượt: ● Đen</p>
+  <p id="score">Điểm: Đen - 0 | Trắng - 0</p>
+  <p id="winner"></p>
+  <div class="buttons">
+    <button onclick="resetGame()">Bắt đầu lại</button>
+    <button onclick="endGame()">Kết thúc & Tính điểm</button>
+  </div>
+
+  <script>
+    const boardSize = 19;
+    const board = document.getElementById('board');
+    const turnDisplay = document.getElementById('turn');
+    const scoreDisplay = document.getElementById('score');
+    const winnerDisplay = document.getElementById('winner');
+    let gameState;
+    let currentPlayer;
+    let gameEnded;
+    let blackScore = 0;
+    let whiteScore = 0;
+
+    function initGame() {
+      gameState = Array.from({ length: boardSize }, () => Array(boardSize).fill(null));
+      currentPlayer = 'black';
+      gameEnded = false;
+      blackScore = 0;
+      whiteScore = 0;
+      board.innerHTML = '';
+      turnDisplay.innerText = `Lượt: ● Đen`;
+      scoreDisplay.innerText = `Điểm: Đen - 0 | Trắng - 0`;
+      winnerDisplay.innerText = '';
+
+      for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.addEventListener('click', () => placeStone(x, y));
+          board.appendChild(cell);
+        }
+      }
+    }
+
+    function getNeighbors(x, y) {
+      const dirs = [[0,1],[1,0],[0,-1],[-1,0]];
+      return dirs.map(([dx,dy]) => [x+dx, y+dy]).filter(([nx,ny]) => nx>=0 && ny>=0 && nx<boardSize && ny<boardSize);
+    }
+
+    function hasLiberty(x, y, visited = new Set()) {
+      const key = `${x},${y}`;
+      if (visited.has(key)) return false;
+      visited.add(key);
+      const color = gameState[y][x];
+      for (let [nx, ny] of getNeighbors(x, y)) {
+        if (gameState[ny][nx] === null) return true;
+        if (gameState[ny][nx] === color && hasLiberty(nx, ny, visited)) return true;
+      }
+      return false;
+    }
+
+    function removeDeadStones(color) {
+      let removedCount = 0;
+      for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+          if (gameState[y][x] === color && !hasLiberty(x, y)) {
+            gameState[y][x] = null;
+            const cell = board.children[y * boardSize + x];
+            cell.innerHTML = '';
+            removedCount++;
+          }
+        }
+      }
+      if (color === 'black') whiteScore += removedCount;
+      else blackScore += removedCount;
+    }
+
+    function exploreTerritory(x, y, visited, color = null) {
+      const stack = [[x, y]];
+      let territoryColor = null;
+      let isTerritory = true;
+      let territoryCount = 0;
+
+      while (stack.length) {
+        const [cx, cy] = stack.pop();
+        const key = `${cx},${cy}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        territoryCount++;
+
+        for (let [nx, ny] of getNeighbors(cx, cy)) {
+          const val = gameState[ny][nx];
+          if (val === null) {
+            stack.push([nx, ny]);
+          } else if (territoryColor === null) {
+            territoryColor = val;
+          } else if (territoryColor !== val) {
+            isTerritory = false;
+          }
+        }
+      }
+
+      return isTerritory ? [territoryColor, territoryCount] : [null, 0];
+    }
+
+    function calculateScore() {
+      blackScore = 0;
+      whiteScore = 0;
+      let visited = new Set();
+
+      for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+          const cell = gameState[y][x];
+          if (cell === 'black') blackScore++;
+          else if (cell === 'white') whiteScore++;
+          else if (!visited.has(`${x},${y}`)) {
+            const [color, count] = exploreTerritory(x, y, visited);
+            if (color === 'black') blackScore += count;
+            else if (color === 'white') whiteScore += count;
+          }
+        }
+      }
+      scoreDisplay.innerText = `Điểm: Đen - ${blackScore} | Trắng - ${whiteScore}`;
+    }
+
+    function placeStone(x, y) {
+      if (gameEnded || gameState[y][x] !== null) return;
+
+      gameState[y][x] = currentPlayer;
+      const cell = board.children[y * boardSize + x];
+      const stone = document.createElement('div');
+      stone.className = `stone ${currentPlayer}`;
+      cell.appendChild(stone);
+
+      const opponent = currentPlayer === 'black' ? 'white' : 'black';
+      removeDeadStones(opponent);
+
+      if (!hasLiberty(x, y)) {
+        gameState[y][x] = null;
+        cell.innerHTML = '';
+        return;
+      }
+
+      calculateScore();
+      currentPlayer = opponent;
+      turnDisplay.innerText = `Lượt: ${currentPlayer === 'black' ? '● Đen' : '○ Trắng'}`;
+    }
+
+    function endGame() {
+      gameEnded = true;
+      calculateScore();
+      turnDisplay.innerText = 'Game kết thúc';
+      if (blackScore > whiteScore) {
+        winnerDisplay.innerText = `Đen thắng với ${blackScore - whiteScore} điểm!`;
+      } else if (whiteScore > blackScore) {
+        winnerDisplay.innerText = `Trắng thắng với ${whiteScore - blackScore} điểm!`;
+      } else {
+        winnerDisplay.innerText = 'Hòa!';
+      }
+    }
+
+    function resetGame() {
+      initGame();
+    }
+
+    initGame();
+  </script>
+</body>
+</html>
